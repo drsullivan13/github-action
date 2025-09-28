@@ -1,0 +1,9 @@
+{
+  "version": "1",
+  "name": "Github Actions",
+  "type": "collection",
+  "ignore": [
+    "node_modules",
+    ".git"
+  ]
+}

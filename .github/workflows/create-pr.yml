@@ -1,0 +1,163 @@
+name: Create Cross-Repo Pull Request
+
+on:
+  repository_dispatch:
+    types: [create-pr]
+
+jobs:
+  create-pr:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Validate payload
+        id: validate
+        run: |
+          if [ -z "${{ github.event.client_payload.target_repo }}" ]; then
+            echo "❌ Missing target_repo in payload"
+            exit 1
+          fi
+          if [ -z "${{ github.event.client_payload.branch_name }}" ]; then
+            echo "❌ Missing branch_name in payload"
+            exit 1
+          fi
+          if [ -z "${{ github.event.client_payload.commit_message }}" ]; then
+            echo "❌ Missing commit_message in payload"
+            exit 1
+          fi
+          if [ -z "${{ github.event.client_payload.pr_title }}" ]; then
+            echo "❌ Missing pr_title in payload"
+            exit 1
+          fi
+          echo "✅ Payload validation passed"
+          echo "target_repo=${{ github.event.client_payload.target_repo }}" >> $GITHUB_OUTPUT
+          echo "branch_name=${{ github.event.client_payload.branch_name }}" >> $GITHUB_OUTPUT
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: Checkout target repository
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ github.event.client_payload.target_repo }}
+          token: ${{ secrets.TARGET_REPO_TOKEN }}
+          path: target-repo
+
+      - name: Check if branch already exists
+        id: check_branch
+        working-directory: target-repo
+        run: |
+          if git show-ref --verify --quiet refs/remotes/origin/${{ github.event.client_payload.branch_name }}; then
+            echo "❌ Branch ${{ github.event.client_payload.branch_name }} already exists"
+            echo "branch_exists=true" >> $GITHUB_OUTPUT
+            exit 1
+          else
+            echo "✅ Branch ${{ github.event.client_payload.branch_name }} is available"
+            echo "branch_exists=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Create and switch to new branch
+        working-directory: target-repo
+        run: |
+          git config user.name "GitHub Action"
+          git config user.email "action@github.com"
+          git checkout -b ${{ github.event.client_payload.branch_name }}
+          echo "✅ Created branch: ${{ github.event.client_payload.branch_name }}"
+
+      - name: Apply file changes
+        working-directory: target-repo
+        run: |
+          # Parse and apply file changes from the payload
+          echo '${{ toJson(github.event.client_payload.file_changes) }}' > /tmp/file_changes.json
+
+          # Use Node.js to process the file changes
+          node -e "
+            const fs = require('fs');
+            const path = require('path');
+            const fileChanges = JSON.parse(fs.readFileSync('/tmp/file_changes.json', 'utf8'));
+
+            let changedFiles = [];
+
+            for (const [filePath, content] of Object.entries(fileChanges)) {
+              // Validate file path (security check)
+              if (filePath.includes('..') || filePath.startsWith('/')) {
+                console.error('❌ Invalid file path:', filePath);
+                process.exit(1);
+              }
+
+              // Create directory if it doesn't exist
+              const dir = path.dirname(filePath);
+              if (dir && dir !== '.') {
+                fs.mkdirSync(dir, { recursive: true });
+              }
+
+              // Write file content
+              fs.writeFileSync(filePath, content, 'utf8');
+              changedFiles.push(filePath);
+              console.log('✅ Updated file:', filePath);
+            }
+
+            // Save changed files list for git operations
+            fs.writeFileSync('/tmp/changed_files.txt', changedFiles.join('\n'), 'utf8');
+          "
+
+      - name: Commit changes
+        working-directory: target-repo
+        run: |
+          # Add all changed files
+          while IFS= read -r file; do
+            git add "$file"
+            echo "📝 Added to git: $file"
+          done < /tmp/changed_files.txt
+
+          # Check if there are changes to commit
+          if git diff --staged --quiet; then
+            echo "⚠️ No changes to commit"
+            exit 1
+          fi
+
+          # Commit changes
+          git commit -m "${{ github.event.client_payload.commit_message }}"
+          echo "✅ Changes committed"
+
+      - name: Push branch to remote
+        working-directory: target-repo
+        run: |
+          git push origin ${{ github.event.client_payload.branch_name }}
+          echo "✅ Branch pushed to remote"
+
+      - name: Create Pull Request
+        id: create_pr
+        working-directory: target-repo
+        env:
+          GH_TOKEN: ${{ secrets.TARGET_REPO_TOKEN }}
+        run: |
+          # Create PR using GitHub CLI
+          pr_url=$(gh pr create \
+            --title "${{ github.event.client_payload.pr_title }}" \
+            --body "${{ github.event.client_payload.pr_body }}" \
+            --head ${{ github.event.client_payload.branch_name }} \
+            --base main)
+
+          echo "✅ Pull Request created: $pr_url"
+          echo "pr_url=$pr_url" >> $GITHUB_OUTPUT
+
+      - name: Output results
+        run: |
+          echo "🎉 Workflow completed successfully!"
+          echo "📋 Summary:"
+          echo "  • Target Repository: ${{ github.event.client_payload.target_repo }}"
+          echo "  • Branch: ${{ github.event.client_payload.branch_name }}"
+          echo "  • Pull Request: ${{ steps.create_pr.outputs.pr_url }}"
+          echo "  • Request ID: ${{ github.event.client_payload.request_id }}"
+
+      - name: Handle errors
+        if: failure()
+        run: |
+          echo "❌ Workflow failed for request: ${{ github.event.client_payload.request_id }}"
+          echo "📋 Failed step details:"
+          echo "  • Target Repository: ${{ github.event.client_payload.target_repo }}"
+          echo "  • Branch: ${{ github.event.client_payload.branch_name }}"
+          echo "  • Request ID: ${{ github.event.client_payload.request_id }}"
+          exit 1

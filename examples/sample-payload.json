@@ -1,0 +1,11 @@
+{
+  "target_repo": "octocat/Hello-World",
+  "branch_name": "feature/update-readme",
+  "file_changes": {
+    "README.md": "# Hello World\n\nThis is an updated README file with new content.\n\n## Features\n- Feature 1: Added awesome functionality\n- Feature 2: Improved performance\n- Feature 3: Better documentation\n\n## Installation\n\n```bash\nnpm install\n```\n\n## Usage\n\n```javascript\nconsole.log('Hello, World!');\n```",
+    "src/config.js": "module.exports = {\n  version: '2.0.0',\n  environment: 'production',\n  features: {\n    newFeature: true,\n    betaFeature: false\n  }\n};"
+  },
+  "commit_message": "Update README and add configuration file\n\n- Enhanced README with installation and usage instructions\n- Added new configuration file with feature flags\n- Bumped version to 2.0.0",
+  "pr_title": "📚 Update documentation and add configuration",
+  "pr_body": "## Summary\n\nThis PR updates the project documentation and adds a new configuration file.\n\n## Changes\n\n- ✨ **README.md**: Added comprehensive documentation with installation and usage instructions\n- 🔧 **src/config.js**: New configuration file with feature flags and version info\n\n## Test Plan\n\n- [ ] Verify README renders correctly\n- [ ] Test configuration file loads properly\n- [ ] Check all links and code examples work\n\n## Notes\n\nThis is an automated PR created via GitHub Actions. Please review the changes and merge if everything looks good.\n\n---\n\n🤖 *Generated automatically by GitHub Action workflow*"
+}
